@@ -55,12 +55,28 @@ from diffusers.optimization import get_scheduler
 from diffusers.utils import check_min_version, convert_state_dict_to_diffusers
 from diffusers.utils.import_utils import is_xformers_available
 
+from src.scores import calc_probs, calc_diversity_scores
+from diverse.models.src.HingeReward import HingeReward
+from dreamsim import dreamsim
+
+
+def load_model(model, ckpt_path):
+    model_name = ckpt_path
+
+    print('load checkpoint from %s' % model_name)
+    checkpoint = torch.load(model_name, map_location='cpu')
+    state_dict = checkpoint
+    state_dict = {key.replace("module.", ""): value for key, value in state_dict.items()}
+    msg = model.load_state_dict(state_dict)
+    print("missing keys:", msg.missing_keys)
+
+    return model
+
 
 # Will error if the minimal version of diffusers is not installed. Remove at your own risks.
 check_min_version("0.25.0.dev0")
 
 logger = get_logger(__name__)
-
 
 VALIDATION_PROMPTS = [
     "portrait photo of a girl, photograph, highly detailed face, depth of field, moody light, golden hour, style by Dan Winters, Russell James, Steve McCurry, centered, extremely detailed, Nikon D850, award winning photography",
@@ -90,36 +106,6 @@ def import_model_class_from_model_name_or_path(pretrained_model_name_or_path: st
     else:
         raise ValueError(f"{model_class} is not supported.")
 
-def calc_probs(prompt, images, processor, accelerator, model):
-    image_inputs = processor(
-        images=images,
-        padding=True,
-        truncation=True,
-        max_length=77,
-        return_tensors="pt",
-    ).to(accelerator.device)
-    
-    text_inputs = processor(
-        text=prompt,
-        padding=True,
-        truncation=True,
-        max_length=77,
-        return_tensors="pt",
-    ).to(accelerator.device)
-
-    with torch.no_grad():
-        # embed
-        image_embs = model.get_image_features(**image_inputs)
-        image_embs = image_embs / torch.norm(image_embs, dim=-1, keepdim=True)
-    
-        text_embs = model.get_text_features(**text_inputs)
-        text_embs = text_embs / torch.norm(text_embs, dim=-1, keepdim=True)
-    
-        # score
-        scores = model.logit_scale.exp() * (text_embs @ image_embs.T)[0]
-       
-    return scores.cpu().item()
-
 
 def log_validation(args, unet, accelerator, weight_dtype, epoch, is_final_validation=False):
     logger.info(f"Running validation... \n Generating images with prompts:\n" f" {VALIDATION_PROMPTS}.")
@@ -129,9 +115,17 @@ def log_validation(args, unet, accelerator, weight_dtype, epoch, is_final_valida
     processor_name_or_path = "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
     model_pretrained_name_or_path = "yuvalkirstain/PickScore_v1"
 
-    processor = AutoProcessor.from_pretrained(processor_name_or_path)
-    model = AutoModel.from_pretrained(model_pretrained_name_or_path).eval().to(accelerator.device)
+    processor_pick = AutoProcessor.from_pretrained(processor_name_or_path)
+    model_pick = AutoModel.from_pretrained(model_pretrained_name_or_path).eval().to(accelerator.device)
     ##########
+
+    # OURS
+    ############
+    model_ds, preprocess_ds = dreamsim(pretrained=True, dreamsim_type="open_clip_vitb32")
+    model_ds = model_ds.extractor_list[0].model
+    model_ds = HingeReward(model_ds, img_lora=False)
+    model_ds = load_model(model_ds, 'final_checkpoints/angle_74/best_lr\=0.0001.pt')
+    ############
 
     # create pipeline
     pipeline = DiffusionPipeline.from_pretrained(
@@ -151,6 +145,7 @@ def log_validation(args, unet, accelerator, weight_dtype, epoch, is_final_valida
 
     # run inference
     images = []
+    raw_images = []
     scores = []
     context = contextlib.nullcontext() if is_final_validation else torch.cuda.amp.autocast()
 
@@ -161,20 +156,25 @@ def log_validation(args, unet, accelerator, weight_dtype, epoch, is_final_valida
                 seed = int(seed)
                 generator = torch.Generator(device=accelerator.device).manual_seed(seed)
                 image = pipeline(prompt, num_inference_steps=25, generator=generator).images[0]
-                score = calc_probs(prompt, image, processor, accelerator, model)
+                raw_images.append(image)
+                score = calc_probs(prompt, image, processor_pick, accelerator, model_pick)
                 images.append(torch.tensor(np.array(image)).unsqueeze(0).permute(0, 3, 1, 2))
                 scores.append(score)
+
+    image_inputs = preprocess_ds(raw_images).to(accelerator.device)
+    diversity_score = calc_diversity_scores(image_inputs, model_ds, 1, len(list_seed), accelerator.device)
 
     tracker_key = "test" if is_final_validation else "validation"
     for tracker in accelerator.trackers:
         if tracker.name == "tensorboard":
             torch_images = torch.cat(images, dim=0)
             grid = torchvision.utils.make_grid(torch_images, nrow=len(list_seed))
-            grid = grid.permute(1,2,0)
-            tracker.writer.add_image(tracker_key, grid, epoch, dataformats="HWC")    
+            grid = grid.permute(1, 2, 0)
+            tracker.writer.add_image(tracker_key, grid, epoch, dataformats="HWC")
 
-    logs = {'val_pickscore': np.mean(scores)}
-    accelerator.log(logs, step=epoch)  
+    logs = {'val_pickscore': np.mean(scores),
+            'diversity_score': diversity_score}
+    accelerator.log(logs, step=epoch)
 
     # Also log images without the LoRA params for comparison.
     if is_final_validation:
@@ -187,7 +187,7 @@ def log_validation(args, unet, accelerator, weight_dtype, epoch, is_final_valida
             if tracker.name == "tensorboard":
                 np_images = np.stack([np.asarray(img) for img in no_lora_images])
                 tracker.writer.add_images("test_without_lora", np_images, epoch, dataformats="NHWC")
-            
+
 
 def parse_args(input_args=None):
     parser = argparse.ArgumentParser(description="Simple example of a training script.")
@@ -639,7 +639,7 @@ def main(args):
 
     if args.scale_lr:
         args.learning_rate = (
-            args.learning_rate * args.gradient_accumulation_steps * args.train_batch_size * accelerator.num_processes
+                args.learning_rate * args.gradient_accumulation_steps * args.train_batch_size * accelerator.num_processes
         )
 
     # Optimizer creation
@@ -802,7 +802,7 @@ def main(args):
                 latents = []
                 for i in range(0, feed_pixel_values.shape[0], args.vae_encode_batch_size):
                     latents.append(
-                        vae.encode(feed_pixel_values[i : i + args.vae_encode_batch_size]).latent_dist.sample()
+                        vae.encode(feed_pixel_values[i: i + args.vae_encode_batch_size]).latent_dist.sample()
                     )
                 latents = torch.cat(latents, dim=0)
                 latents = latents * vae.config.scaling_factor

@@ -12,7 +12,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image
 from config.options import *
-from config.utils import *
 from models.blip_pretrain import blip_pretrain
 from torchvision.transforms import Compose, Resize, CenterCrop, ToTensor, Normalize
 
@@ -25,39 +24,37 @@ except ImportError:
 
 
 class HingeReward(nn.Module):
-    def __init__(self, backbone, img_lora=False):
+    def __init__(self, backbone, img_lora=False, is_eval=False):
         super().__init__()
         self.device = 'cpu'
 
         self.visual_encoder = backbone
 
-#        for name, parms in self.visual_encoder.named_parameters():
-#            if '_proj' in name:
-#                parms.requires_grad_(False)
+        if not is_eval:
 
-        if img_lora:
-            self.visual_encoder.requires_grad_(False)
-            for name, parms in self.blip.visual_encoder.named_parameters():
-                if 'lora' in name:
-                    parms.requires_grad_(True)
+            if img_lora:
+                self.visual_encoder.requires_grad_(False)
+                for name, parms in self.blip.visual_encoder.named_parameters():
+                    if 'lora' in name:
+                        parms.requires_grad_(True)
 
-        if not img_lora:
-            # fix certain ratio of layers
-            self.image_layer_num = 24 if config['BLIP']['vit'] == 'large' else 12
-            if opts.fix_rate > 0:
-                image_fix_num = "blocks.{}".format(int(self.image_layer_num * opts.fix_rate))
-                for name, parms in self.visual_encoder.named_parameters():
-                    parms.requires_grad_(False)
-                    if image_fix_num in name:
-                        break
+            if not img_lora:
+                # fix certain ratio of layers
+                self.image_layer_num = 24 if config['BLIP']['vit'] == 'large' else 12
+                if opts.fix_rate > 0:
+                    image_fix_num = "blocks.{}".format(int(self.image_layer_num * opts.fix_rate))
+                    for name, parms in self.visual_encoder.named_parameters():
+                        parms.requires_grad_(False)
+                        if image_fix_num in name:
+                            break
 
-        all = 0
-        trainable = 0
-        for name, parms in self.visual_encoder.named_parameters():
-            all += 1
-            if parms.requires_grad:
-                trainable += 1
-        print(f'Visual trainable layers {trainable}/{all}')
+            all = 0
+            trainable = 0
+            for name, parms in self.visual_encoder.named_parameters():
+                all += 1
+                if parms.requires_grad:
+                    trainable += 1
+            print(f'Visual trainable layers {trainable}/{all}')
 
 
     def forward(self, batch_data):
@@ -66,6 +63,10 @@ class HingeReward(nn.Module):
         emb_img_1, emb_img_2 = batch_data['emb_img_1'], batch_data['emb_img_2']
 
         return emb_img_1, emb_img_2
+
+    def get_image_features(self, image_batch):
+        image_embeds = self.visual_encoder(image_batch)
+        return image_embeds[:, 0, :].float()
 
     def encode_pair(self, batch_data):
         img_1, img_2 = batch_data['image_1'], batch_data['image_2']
