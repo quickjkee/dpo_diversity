@@ -1,0 +1,31 @@
+train_dataloader:
+  - target: yt_tools.dataloader.IterableDataloader
+    params:
+      name: train_orig
+      batch_size: 1
+      dataset:
+        target: yt_tools.yt_iterable_dataset.IterableYTDataset
+        params:
+          table: //home/yr/dbaranchuk/datasets/pickapic_v2_train
+          yt_proxy: hahn
+      preprocess:
+        - in_map:
+            image_bytes: jpg_0
+          target: yt_tools.processing.process_fns.decode_image_pipeline
+          out_map: jpg_0
+        - in_map:
+            image_bytes: jpg_1
+          target: yt_tools.processing.process_fns.decode_image_pipeline
+          out_map: jpg_1
+        - in_map:
+            string: caption
+          target: yt_tools.processing.process_fns.string_decode
+        - in_map:
+            string: label_0
+          target: yt_tools.processing.process_fns.string_decode
+      stackable:
+        - jpg_0
+        - jpg_1
+      non_stackable:
+        - text
+        - label_0

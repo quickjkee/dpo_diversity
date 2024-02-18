@@ -1,0 +1,15 @@
+train_dataloader:
+  - target: yt_tools.dataloader.IterableDataloader
+    params:
+      name: train_orig
+      batch_size: 1
+      dataset:
+        target: yt_tools.yt_iterable_dataset.IterableYTDataset
+        params:
+          table: //home/yr/dbaranchuk/datasets/pickapic_v2_train
+          yt_proxy: hahn
+      non_stackable:
+        - jpg_0
+        - jpg_1
+        - caption
+        - label_0
