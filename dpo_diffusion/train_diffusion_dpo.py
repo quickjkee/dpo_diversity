@@ -884,8 +884,6 @@ def main(args):
 
             # Checks if the accelerator has performed an optimization step behind the scenes
             if accelerator.sync_gradients:
-                progress_bar.update(1)
-                global_step += 1
 
                 if accelerator.is_main_process:
                     if global_step % args.checkpointing_steps == 0:
@@ -937,6 +935,11 @@ def main(args):
                             "diversity_score": diversity_score.item()
                         }
                         accelerator.log(val_logs, step=global_step)
+
+                        copy_out_to_snapshot(args.output_dir)
+
+                progress_bar.update(1)
+                global_step += 1
                 dist.barrier()
                     
             logs = {
