@@ -273,6 +273,11 @@ def parse_args(input_args=None):
         help="Total number of training steps to perform.  If provided, overrides num_train_epochs.",
     )
     parser.add_argument(
+        "--dreamsim_open_clip_vitb32_path",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
         "--checkpointing_steps",
         type=int,
         default=500,
