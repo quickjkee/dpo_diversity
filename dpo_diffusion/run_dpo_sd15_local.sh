@@ -1,11 +1,11 @@
-export CUDA_VISIBLE_DEVICES=1,2,3,4,5,6
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
 export MODEL_NAME="runwayml/stable-diffusion-v1-5"
 # "/extra_disk_1/dbaranchuk/dpms/pretrained/sd-v1-5"
 ACCELERATE_CONFIG="configs/default_config.yaml"
 PORT=$(( ((RANDOM<<15)|RANDOM) % 27001 + 2000 ))
 echo $PORT
 
-accelerate launch --config_file $ACCELERATE_CONFIG --num_processes=6 --main_process_port $PORT train_diffusion_dpo_local.py \
+accelerate launch --config_file $ACCELERATE_CONFIG --num_processes=8 --main_process_port $PORT train_diffusion_dpo_local.py \
   --pretrained_model_name_or_path=$MODEL_NAME  \
   --output_dir="results_sd15" \
   --mixed_precision="fp16" \
