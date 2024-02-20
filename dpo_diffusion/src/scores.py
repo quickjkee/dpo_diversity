@@ -74,7 +74,7 @@ def calc_diversity_scores(images, model, processor, batch_size=64, num_seeds=5, 
         truncation=True,
         max_length=77,
         return_tensors="pt",
-    ).to(accelerator.device)
+    ).to(device)
 
     image_embs = []
     for i in range(0, len(image_inputs), batch_size):
@@ -85,7 +85,7 @@ def calc_diversity_scores(images, model, processor, batch_size=64, num_seeds=5, 
 
     dim = embs.size(dim=-1)
     image_embs = torch.cat(image_embs, dim=0)
-    image_embs = image_embs.reshape(1, num_seeds, dim)
+    image_embs = image_embs.reshape(-1, num_seeds, dim)
     sim_matricies = 1 - torch.bmm(image_embs, image_embs.transpose(2, 1))
 
     scores = sim_matricies.sum(-1).sum(-1) / num_seeds / (num_seeds - 1)

@@ -69,8 +69,18 @@ class HingeReward(nn.Module):
         image_embeds = self.visual_encoder(image_batch)
         return image_embeds #[:, 0, :].float()
 
+    @torch.no_grad()
     def classify(self, img_batch_1, img_batch_2):
-        pass
+        img_batch_emb_1 = self.get_image_features(img_batch_1)
+        img_batch_emb_1 /= img_batch_emb_1.norm(dim=-1, keepdim=True)
+
+        img_batch_emb_2 = self.get_image_features(img_batch_2)
+        img_batch_emb_2 /= img_batch_emb_2.norm(dim=-1, keepdim=True)
+
+        pred = (F.cosine_similarity(img_batch_emb_1, img_batch_emb_2, dim=1).item() + 1) / 2
+        labels = (pred > self.threshold) * 1.0
+
+        return labels.int()
 
     def encode_pair(self, batch_data):
         img_1, img_2 = batch_data['image_1'], batch_data['image_2']

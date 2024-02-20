@@ -577,6 +577,14 @@ def main(args):
         args.pretrained_model_name_or_path, subfolder="unet", revision=args.revision, variant=args.variant
     )
 
+    # OURS MODELS
+    ######################
+    processor_ours = AutoProcessor.from_pretrained(args.clip_model_name_or_path)
+    with src.dnnlib.util.open_url(args.dreamsim_open_clip_vitb32_path) as f:
+        model_ours = pickle.load(f)['model'].to(accelerator.device)
+    model_ours = HingeReward(model_ours, threshold=0.981654167175293, img_lora=False)
+    ######################
+
     vae.requires_grad_(False)
     text_encoder.requires_grad_(False)
     unet.requires_grad_(False)
