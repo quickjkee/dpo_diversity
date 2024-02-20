@@ -510,6 +510,11 @@ def collate_fn(examples):
     pixel_values = torch.stack(examples["pixel_values"])
     pixel_values = pixel_values.to(memory_format=torch.contiguous_format).float()
     final_dict = {"pixel_values": pixel_values}
+
+    pixel_values_ours = torch.stack(examples["pixel_values_ours"])
+    pixel_values_ours = pixel_values_ours.to(memory_format=torch.contiguous_format).float()
+    final_dict["pixel_values_ours"] = pixel_values_ours
+
     final_dict["input_ids"] = examples["input_ids"]
     return final_dict
 
@@ -707,10 +712,19 @@ def main(args):
 
     def preprocess_train(examples):
         all_pixel_values = []
+        all_pixel_values_ours = []
         for col_name in ["jpg_0", "jpg_1"]:
             images = [Image.open(io.BytesIO(im_bytes)).convert("RGB") for im_bytes in examples[col_name]]
             pixel_values = [train_transforms(image) for image in images]
+            pixel_values_ours = processor_ours(
+                images=images,
+                padding=True,
+                truncation=True,
+                max_length=77,
+                return_tensors="pt",
+            )['pixel_values']
             all_pixel_values.append(pixel_values)
+            all_pixel_values_ours.append(pixel_values_ours)
 
         # Double on channel dim, jpg_y then jpg_w
         im_tup_iterator = zip(*all_pixel_values)
@@ -721,6 +735,15 @@ def main(args):
             combined_im = torch.cat(im_tup, dim=0)  # no batch dim
             combined_pixel_values.append(combined_im)
         examples["pixel_values"] = combined_pixel_values
+
+        im_tup_iterator = zip(*all_pixel_values_ours)
+        combined_pixel_values_ours = []
+        for im_tup, label_0 in zip(combined_pixel_values_ours, examples["label_0"]):
+            if label_0 == 0:
+                im_tup = im_tup[::-1]
+            combined_im = torch.cat(im_tup, dim=0)  # no batch dim
+            combined_pixel_values_ours.append(combined_im)
+        examples["pixel_values_ours"] = combined_pixel_values_ours
 
         examples["input_ids"] = tokenize_captions(tokenizer, examples)
         return examples
@@ -877,6 +900,7 @@ def main(args):
                 raw_model_loss = 0.5 * (model_losses_w.mean() + model_losses_l.mean())
                 model_diff = model_losses_w - model_losses_l  # These are both LBS (as is t)
 
+
                 # Reference model predictions.
                 accelerator.unwrap_model(unet).disable_adapters()
                 with torch.no_grad():
@@ -895,10 +919,29 @@ def main(args):
                 # Re-enable adapters.
                 accelerator.unwrap_model(unet).enable_adapters()
 
+                # DIVERSITY LOSS
+                ############################
+                with torch.no_grad():
+                    # Get data
+                    batch["pixel_values_ours"] = batch["pixel_values_ours"].cuda()
+                    pixel_values_ours = batch["pixel_values_ours"].to(dtype=weight_dtype)
+                    feed_pixel_values_ours = torch.cat(pixel_values_ours.chunk(2, dim=1))
+                    img_1_batch, img_2_batch = feed_pixel_values_ours.chunk(2, dim=0)
+
+                    # Preds
+                    labels = model_ours.classify(img_1_batch, img_2_batch)
+                    labels = -1 * (labels * 2 - 1)  # [0, 1] -> [-1, 1] -> [1, -1]
+
+                scores = model_losses_w + model_losses_l
+                logits_div = F.logsigmoid(scores) * labels
+                loss_div = -1 * (logits_div.mean())
+                ############################
+
                 # Final loss.
                 logits = ref_diff - model_diff
                 if args.loss_type == "sigmoid":
-                    loss = -1 * F.logsigmoid(args.beta_dpo * logits).mean()
+                    loss_old = -1 * F.logsigmoid(args.beta_dpo * logits).mean()
+                    loss = loss_old + loss_div
                 elif args.loss_type == "hinge":
                     loss = torch.relu(1 - args.beta_dpo * logits).mean()
                 elif args.loss_type == "ipo":
@@ -981,6 +1024,8 @@ def main(args):
                     
             logs = {
                 "loss": loss.detach().item(),
+                "loss_pick": loss_old.detach().item(),
+                "loss_div": loss_div.detach().item(),
                 "raw_model_loss": raw_model_loss.detach().item(),
                 "ref_loss": raw_ref_loss.detach().item(),
                 "implicit_acc": implicit_acc.detach().item(),
