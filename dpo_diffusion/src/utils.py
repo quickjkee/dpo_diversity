@@ -27,7 +27,7 @@ try:
 except:
     print('failed to import plotly')
 
-from src.scores import calc_pick_and_clip_scores, calc_diversity_scores
+from src.scores import calc_pick_and_clip_scores, calc_diversity_scores, calc_clip_diversity_scores
 
 
 logger = get_logger(__name__)
@@ -152,14 +152,54 @@ def sample(args, unet, accelerator, weight_dtype, step, num_prompts=500, num_see
     # Done.
     dist.barrier()
     return gathered_images, gathered_prompts
-    
 
-def evaluate(args, accelerator, images, prompts, device='cuda', num_seeds=5):
+
+def evaluate(
+        args,
+        accelerator,
+        images,
+        prompts,
+        device='cuda',
+        num_seeds=5,
+):
     processor = AutoProcessor.from_pretrained(args.clip_model_name_or_path)
     clip_model = AutoModel.from_pretrained(args.clip_model_name_or_path).eval().to(device)
     pickscore_model = AutoModel.from_pretrained(args.pickscore_model_name_or_path).eval().to(device)
-    
-    pick_scores = calc_pick_and_clip_scores(processor, pickscore_model, images, prompts, device=device)
-    clip_scores = calc_pick_and_clip_scores(processor, clip_model, images, prompts, device=device)
-    diversity_scores = calc_diversity_scores(processor, clip_model, images, num_seeds=num_seeds, device=device)
-    return pick_scores.mean(), clip_scores.mean(), diversity_scores.mean()
+
+    image_inputs = processor(
+        images=images,
+        padding=True,
+        truncation=True,
+        max_length=77,
+        return_tensors="pt",
+    )['pixel_values'].to(device)
+
+    text_inputs = processor(
+        text=prompts,
+        padding=True,
+        truncation=True,
+        max_length=77,
+        return_tensors="pt",
+    )['input_ids'].to(device)
+
+    logger.info("Evaluating PickScore...")
+    pick_score = calc_pick_and_clip_scores(pickscore_model, image_inputs, text_inputs).mean()
+    logger.info("Evaluating CLIP ViT-H-14 score...")
+    clip_score = calc_pick_and_clip_scores(clip_model, image_inputs, text_inputs).mean()
+    logger.info("Evaluating diversity score using CLIP ViT-H-14...")
+    diversity_clip_score = calc_clip_diversity_scores(clip_model, image_inputs, num_seeds=num_seeds).mean()
+
+    """
+    if args.dreamsim_open_clip_vitb32_path is not None:
+        logger.info("Evaluating diversity score using DreamSim OpenCLIP ViT-B-32...")
+        with src.dnnlib.util.open_url(args.dreamsim_open_clip_vitb32_path) as f:
+            dreamsim_model = pickle.load(f)['model'].to(device)
+
+        diversity_dreamsim_score = calc_dreamsim_diversity_scores(
+            dreamsim_model, image_inputs, num_seeds=num_seeds
+        ).mean()
+    else:
+        diversity_dreamsim_score = torch.zeros_like(diversity_clip_score)
+    """
+
+    return pick_score, clip_score, diversity_clip_score
