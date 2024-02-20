@@ -57,6 +57,7 @@ import pickle
 from omegaconf import OmegaConf
 import torch.distributed as dist
 from src.nirvana_utils import copy_snapshot_to_out, copy_out_to_snapshot
+from src import dnnlib
 import src
 from yt_tools.utils import instantiate_from_config
 from src.utils import image_grid, get_log_validation_prompts, get_validation_prompts
@@ -111,7 +112,7 @@ def log_validation(args, unet, accelerator, weight_dtype, epoch, is_final_valida
 
     # OURS
     ############
-    with src.dnnlib.util.open_url(args.dreamsim_open_clip_vitb32_path) as f:
+    with dnnlib.util.open_url(args.dreamsim_open_clip_vitb32_path) as f:
         model_ours = pickle.load(f)['model'].to(accelerator.device)
     model_ours = HingeReward(model_ours, threshold=0.981654167175293, img_lora=False).eval().to(accelerator.device)
     ############
@@ -585,7 +586,7 @@ def main(args):
     # OURS MODELS
     ######################
     processor_ours = AutoProcessor.from_pretrained(args.clip_model_name_or_path)
-    with src.dnnlib.util.open_url(args.dreamsim_open_clip_vitb32_path) as f:
+    with dnnlib.util.open_url(args.dreamsim_open_clip_vitb32_path) as f:
         model_ours = pickle.load(f)['model'].to(accelerator.device)
     model_ours = HingeReward(model_ours, threshold=0.981654167175293, img_lora=False).eval().to(accelerator.device)
     ######################
