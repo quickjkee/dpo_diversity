@@ -74,7 +74,7 @@ def calc_diversity_scores(images, model, processor, batch_size=64, num_seeds=5, 
         truncation=True,
         max_length=77,
         return_tensors="pt",
-    ).to(device)
+    )['pixel_values'].to(device)
 
     image_embs = []
     for i in range(0, len(image_inputs), batch_size):
