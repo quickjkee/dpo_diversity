@@ -739,7 +739,7 @@ def main(args):
 
         im_tup_iterator = zip(*all_pixel_values_ours)
         combined_pixel_values_ours = []
-        for im_tup, label_0 in zip(combined_pixel_values_ours, examples["label_0"]):
+        for im_tup, label_0 in zip(im_tup_iterator, examples["label_0"]):
             if label_0 == 0:
                 im_tup = im_tup[::-1]
             combined_im = torch.cat(im_tup, dim=0)  # no batch dim
