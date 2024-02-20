@@ -993,7 +993,7 @@ def main(args):
 
                     if args.run_validation and global_step % args.validation_steps == 0:
                         log_validation(
-                            validation_prompts, args, unet=unet, accelerator=accelerator, weight_dtype=weight_dtype, step=global_step
+                            args, unet=unet, accelerator=accelerator, weight_dtype=weight_dtype, epoch=global_step
                         )
                         copy_out_to_snapshot(args.output_dir)
 
