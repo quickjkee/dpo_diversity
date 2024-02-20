@@ -11,7 +11,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image
-from models.blip_pretrain import blip_pretrain
 from torchvision.transforms import Compose, Resize, CenterCrop, ToTensor, Normalize
 
 try:
