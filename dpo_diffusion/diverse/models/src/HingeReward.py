@@ -24,11 +24,12 @@ except ImportError:
 
 
 class HingeReward(nn.Module):
-    def __init__(self, backbone, img_lora=False, is_eval=False):
+    def __init__(self, backbone, threshold, img_lora=False, is_eval=False):
         super().__init__()
         self.device = 'cpu'
 
         self.visual_encoder = backbone
+        self.threshold = threshold
 
         if not is_eval:
 
@@ -66,7 +67,10 @@ class HingeReward(nn.Module):
 
     def get_image_features(self, image_batch):
         image_embeds = self.visual_encoder(image_batch)
-        return image_embeds[:, 0, :].float()
+        return image_embeds #[:, 0, :].float()
+
+    def classify(self, img_batch_1, img_batch_2):
+        pass
 
     def encode_pair(self, batch_data):
         img_1, img_2 = batch_data['image_1'], batch_data['image_2']

@@ -53,12 +53,17 @@ from diffusers.utils import check_min_version, convert_state_dict_to_diffusers
 from diffusers.utils.import_utils import is_xformers_available
 
 import yaml
+import pickle
 from omegaconf import OmegaConf
 import torch.distributed as dist
 from src.nirvana_utils import copy_snapshot_to_out, copy_out_to_snapshot
+import src
 from yt_tools.utils import instantiate_from_config
 from src.utils import image_grid, get_log_validation_prompts, get_validation_prompts
-from src.utils import sample, evaluate
+from transformers import AutoProcessor, AutoModel
+from diverse.models.src.HingeReward import HingeReward
+from src.scores import calc_probs, calc_diversity_scores
+import torchvision
 
 # Will error if the minimal version of diffusers is not installed. Remove at your own risks.
 check_min_version("0.25.0.dev0")
@@ -66,17 +71,17 @@ check_min_version("0.25.0.dev0")
 logger = get_logger(__name__)
 
 
-# VALIDATION_PROMPTS = []
-#     "portrait photo of a girl, photograph, highly detailed face, depth of field, moody light, golden hour, style by Dan Winters, Russell James, Steve McCurry, centered, extremely detailed, Nikon D850, award winning photography",
-#     "Self-portrait oil painting, a beautiful cyborg with golden hair, 8k",
-#     "Astronaut in a jungle, cold color palette, muted colors, detailed, 8k",
-#     "A photo of beautiful mountain with realistic sunset and blue lake, highly detailed, masterpiece",
-#     "A person laying on a surfboard holding his dog",
-#     "Beautiful Italian beach scene painted by Van Gogh and Redon",
-#     "A camping scene shows a man holding a sandwich",
-#     "Wooden kitchen cabinets a tile floor and carpet in front of the sink",
-#     "A girl"
-# ]
+VALIDATION_PROMPTS = [
+    "portrait photo of a girl, photograph, highly detailed face, depth of field, moody light, golden hour, style by Dan Winters, Russell James, Steve McCurry, centered, extremely detailed, Nikon D850, award winning photography",
+    "Self-portrait oil painting, a beautiful cyborg with golden hair, 8k",
+    "Astronaut in a jungle, cold color palette, muted colors, detailed, 8k",
+    "A photo of beautiful mountain with realistic sunset and blue lake, highly detailed, masterpiece",
+    'A sad puppy with large eyes',
+    'mature woman drawn anime style',
+    'A girl with pale blue hair and a cami tank top',
+    'A beautiful natural woman',
+    'cute girl, Kyoto animation, 4k, high resolution',
+]
 
 
 def import_model_class_from_model_name_or_path(pretrained_model_name_or_path: str, revision: str):
@@ -95,16 +100,28 @@ def import_model_class_from_model_name_or_path(pretrained_model_name_or_path: st
         raise ValueError(f"{model_class} is not supported.")
 
 
-def log_validation(prompts, args, unet, accelerator, weight_dtype, step, is_final_validation=False, num_seeds=5):
-    logger.info("Running validation...")
+def log_validation(args, unet, accelerator, weight_dtype, epoch, is_final_validation=False):
+    logger.info(f"Running validation... \n Generating images with prompts:\n" f" {VALIDATION_PROMPTS}.")
+
+    # PICKSCORE
+    ############
+    processor_pick = AutoProcessor.from_pretrained(args.clip_model_name_or_path)
+    model_pick = AutoModel.from_pretrained(args.clip_model_name_or_path).eval().to(accelerator.device)
+    ##########
+
+    # OURS
+    ############
+    with src.dnnlib.util.open_url(args.dreamsim_open_clip_vitb32_path) as f:
+        model_ours = pickle.load(f)['model'].to(accelerator.device)
+    model_ours = HingeReward(model_ours, threshold=0.981654167175293, img_lora=False)
+    ############
 
     # create pipeline
     pipeline = DiffusionPipeline.from_pretrained(
         args.pretrained_model_name_or_path,
         revision=args.revision,
         variant=args.variant,
-        torch_dtype=weight_dtype,
-        safety_checker=None,
+        torch_dtype=weight_dtype, safety_checker=None
     )
     if not is_final_validation:
         pipeline.unet = accelerator.unwrap_model(unet)
@@ -116,39 +133,48 @@ def log_validation(prompts, args, unet, accelerator, weight_dtype, step, is_fina
     pipeline.set_progress_bar_config(disable=True)
 
     # run inference
-    generator = torch.Generator(device=accelerator.device).manual_seed(args.seed) if args.seed else None
     images = []
+    raw_images = []
+    scores = []
     context = contextlib.nullcontext() if is_final_validation else torch.cuda.amp.autocast()
 
-    for prompt in prompts:
+    for prompt in VALIDATION_PROMPTS:
         with context:
-            image = pipeline([prompt] * num_seeds, num_inference_steps=25, generator=generator).images
-            images.extend(image)
-    images = [image.resize((256, 256)) for image in images]
-    img_grid = image_grid(images, len(prompts), num_seeds)
+            list_seed = args.val_seed.split(',')
+            for seed in list_seed:
+                seed = int(seed)
+                generator = torch.Generator(device=accelerator.device).manual_seed(seed)
+                image = pipeline(prompt, num_inference_steps=25, generator=generator).images[0]
+                raw_images.append(image)
+                score = calc_probs(prompt, image, processor_pick, accelerator, model_pick)
+                images.append(torch.tensor(np.array(image)).unsqueeze(0).permute(0, 3, 1, 2))
+                scores.append(score)
+
+    diversity_score = calc_diversity_scores(raw_images, model_ours, processor_pick, 1, len(list_seed), accelerator.device)
 
     tracker_key = "test" if is_final_validation else "validation"
     for tracker in accelerator.trackers:
         if tracker.name == "tensorboard":
-            # np_images = np.stack([np.asarray(img) for img in images])
-            tracker.writer.add_images(tracker_key, np.asarray(img_grid)[None], step, dataformats="NHWC")
-    
+            torch_images = torch.cat(images, dim=0)
+            grid = torchvision.utils.make_grid(torch_images, nrow=len(list_seed))
+            grid = grid.permute(1, 2, 0)
+            tracker.writer.add_image(tracker_key, grid, epoch, dataformats="HWC")
+
+    logs = {'val_pickscore': np.mean(scores),
+            'diversity_score': diversity_score.mean().item()}
+    accelerator.log(logs, step=epoch)
+
     # Also log images without the LoRA params for comparison.
     if is_final_validation:
-        generator = torch.Generator(device=accelerator.device).manual_seed(args.seed) if args.seed else None
-
         pipeline.disable_lora()
-        no_lora_images = []
-        for prompt in prompts:
-            image = pipeline([prompt] * num_seeds, num_inference_steps=25, generator=generator).images
-            no_lora_images.extend(image)
-        no_lora_images = [image.resize((256, 256)) for image in no_lora_images]
-        img_grid = image_grid(no_lora_images, len(prompts), num_seeds)
+        no_lora_images = [
+            pipeline(prompt, num_inference_steps=25, generator=generator).images[0] for prompt in VALIDATION_PROMPTS
+        ]
 
         for tracker in accelerator.trackers:
             if tracker.name == "tensorboard":
-                # np_images = np.stack([np.asarray(img) for img in no_lora_images])
-                tracker.writer.add_images("test_without_lora", np.asarray(img_grid)[None], step, dataformats="NHWC")
+                np_images = np.stack([np.asarray(img) for img in no_lora_images])
+                tracker.writer.add_images("test_without_lora", np_images, epoch, dataformats="NHWC")
             
 
 def parse_args(input_args=None):
@@ -234,6 +260,7 @@ def parse_args(input_args=None):
         help="The directory where the downloaded models and datasets will be stored.",
     )
     parser.add_argument("--seed", type=int, default=None, help="A seed for reproducible training.")
+    parser.add_argument("--val_seed", type=str, default=None, help="A seed for reproducible training.")
     parser.add_argument(
         "--resolution",
         type=int,
@@ -917,8 +944,13 @@ def main(args):
                         log_validation(
                             validation_prompts, args, unet=unet, accelerator=accelerator, weight_dtype=weight_dtype, step=global_step
                         )
+                        copy_out_to_snapshot(args.output_dir)
 
                 dist.barrier()
+                progress_bar.update(1)
+                global_step += 1
+
+                """
                 if args.run_validation and global_step % args.validation_steps == 0:
                     images, prompts = sample(
                         args, unet=unet, accelerator=accelerator, 
@@ -937,10 +969,7 @@ def main(args):
                         accelerator.log(val_logs, step=global_step)
 
                         copy_out_to_snapshot(args.output_dir)
-
-                progress_bar.update(1)
-                global_step += 1
-                dist.barrier()
+                """
                     
             logs = {
                 "loss": loss.detach().item(),

@@ -67,7 +67,15 @@ def calc_probs(prompt, images, processor, accelerator, model):
     return scores.cpu().item()
 
 @torch.no_grad()
-def calc_diversity_scores(image_inputs, model, batch_size=64, num_seeds=5, device='cuda'):
+def calc_diversity_scores(images, model, processor, batch_size=64, num_seeds=5, device='cuda'):
+    image_inputs = processor(
+        images=images,
+        padding=True,
+        truncation=True,
+        max_length=77,
+        return_tensors="pt",
+    ).to(accelerator.device)
+
     image_embs = []
     for i in range(0, len(image_inputs), batch_size):
         image_batch = image_inputs[i:i+batch_size]
@@ -81,6 +89,6 @@ def calc_diversity_scores(image_inputs, model, batch_size=64, num_seeds=5, devic
     sim_matricies = 1 - torch.bmm(image_embs, image_embs.transpose(2, 1))
 
     scores = sim_matricies.sum(-1).sum(-1) / num_seeds / (num_seeds - 1)
-    return scores.item()
+    return scores
 
 
