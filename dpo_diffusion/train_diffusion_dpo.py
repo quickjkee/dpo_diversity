@@ -933,16 +933,16 @@ def main(args):
                     labels = model_ours.classify(img_1_batch, img_2_batch)
                     labels = -1 * (labels * 2 - 1)  # [0, 1] -> [-1, 1] -> [1, -1]
 
-                scores = model_losses_w + model_losses_l - ref_losses_w - ref_losses_l
-                logits_div = F.logsigmoid(args.beta_dpo * scores) * labels
-                loss_div = -1 * (logits_div.mean())
+                    scores = model_losses_w + model_losses_l - ref_losses_w - ref_losses_l
+                    logits_div = F.logsigmoid(args.beta_dpo * scores) * labels
+                    loss_div = -1 * (logits_div.mean())
                 ############################
 
                 # Final loss.
                 logits = ref_diff - model_diff
                 if args.loss_type == "sigmoid":
                     loss_old = -1 * F.logsigmoid(args.beta_dpo * logits).mean()
-                    loss = loss_old + 100 * loss_div
+                    loss = loss_old #+ 100 * loss_div
                 elif args.loss_type == "hinge":
                     loss = torch.relu(1 - args.beta_dpo * logits).mean()
                 elif args.loss_type == "ipo":
