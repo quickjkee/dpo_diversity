@@ -75,7 +75,7 @@ class HingeReward(nn.Module):
         img_batch_emb_2 = self.get_image_features(img_batch_2)
         img_batch_emb_2 /= img_batch_emb_2.norm(dim=-1, keepdim=True)
 
-        pred = (F.cosine_similarity(img_batch_emb_1, img_batch_emb_2, dim=1).item() + 1) / 2
+        pred = (F.cosine_similarity(img_batch_emb_1, img_batch_emb_2, dim=1) + 1) / 2
         labels = (pred > self.threshold) * 1.0
 
         return labels.int()
