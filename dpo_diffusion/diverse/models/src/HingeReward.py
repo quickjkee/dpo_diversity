@@ -11,7 +11,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image
-from config.options import *
 from models.blip_pretrain import blip_pretrain
 from torchvision.transforms import Compose, Resize, CenterCrop, ToTensor, Normalize
 
@@ -24,7 +23,7 @@ except ImportError:
 
 
 class HingeReward(nn.Module):
-    def __init__(self, backbone, threshold, img_lora=False, is_eval=False):
+    def __init__(self, backbone, threshold, img_lora=False, is_eval=True):
         super().__init__()
         self.device = 'cpu'
 

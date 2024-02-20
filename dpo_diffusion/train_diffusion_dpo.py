@@ -113,7 +113,7 @@ def log_validation(args, unet, accelerator, weight_dtype, epoch, is_final_valida
     ############
     with src.dnnlib.util.open_url(args.dreamsim_open_clip_vitb32_path) as f:
         model_ours = pickle.load(f)['model'].to(accelerator.device)
-    model_ours = HingeReward(model_ours, threshold=0.981654167175293, img_lora=False)
+    model_ours = HingeReward(model_ours, threshold=0.981654167175293, img_lora=False).eval().to(accelerator.device)
     ############
 
     # create pipeline
@@ -587,7 +587,7 @@ def main(args):
     processor_ours = AutoProcessor.from_pretrained(args.clip_model_name_or_path)
     with src.dnnlib.util.open_url(args.dreamsim_open_clip_vitb32_path) as f:
         model_ours = pickle.load(f)['model'].to(accelerator.device)
-    model_ours = HingeReward(model_ours, threshold=0.981654167175293, img_lora=False)
+    model_ours = HingeReward(model_ours, threshold=0.981654167175293, img_lora=False).eval().to(accelerator.device)
     ######################
 
     vae.requires_grad_(False)
