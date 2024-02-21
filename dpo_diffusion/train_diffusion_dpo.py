@@ -467,6 +467,11 @@ def parse_args(input_args=None):
         type=int,
         default=4,
     )
+    parser.add_argument(
+        "--quality_threshold_for_div",
+        type=float,
+        default=0.0
+    )
 
     if input_args is not None:
         args = parser.parse_args(input_args)
@@ -591,6 +596,12 @@ def main(args):
     model_ours = HingeReward(model_ours, threshold=0.981654167175293, img_lora=False).eval().to(accelerator.device).to(torch.float16)
     ######################
 
+    # PICKSCORE
+    ######################
+    processor_pick = AutoProcessor.from_pretrained(args.clip_model_name_or_path)
+    model_pick = AutoModel.from_pretrained(args.clip_model_name_or_path).eval().to(accelerator.device)
+    ######################
+
     vae.requires_grad_(False)
     text_encoder.requires_grad_(False)
     unet.requires_grad_(False)
@@ -710,6 +721,10 @@ def main(args):
             transforms.Normalize([0.5], [0.5]),
         ]
     )
+
+    if args.quality_threshold_for_div:
+        pass
+
 
     def preprocess_train(examples):
         all_pixel_values = []
@@ -945,7 +960,7 @@ def main(args):
                 logits = ref_diff - model_diff
                 if args.loss_type == "sigmoid":
                     loss_old = -1 * F.logsigmoid(args.beta_dpo * logits).mean()
-                    loss = loss_old + 10 * loss_div
+                    loss = loss_old + loss_div
                 elif args.loss_type == "hinge":
                     loss = torch.relu(1 - args.beta_dpo * logits).mean()
                 elif args.loss_type == "ipo":

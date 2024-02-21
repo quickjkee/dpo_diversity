@@ -92,3 +92,7 @@ def calc_diversity_scores(images, model, processor, batch_size=64, num_seeds=5, 
     return scores
 
 
+def collect_pickscores():
+    pass
+
+
