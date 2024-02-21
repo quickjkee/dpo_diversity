@@ -63,7 +63,7 @@ from yt_tools.utils import instantiate_from_config
 from src.utils import image_grid, get_log_validation_prompts, get_validation_prompts
 from transformers import AutoProcessor, AutoModel
 from diverse.models.src.HingeReward import HingeReward
-from src.scores import calc_probs, calc_diversity_scores
+from src.scores import calc_probs, calc_diversity_scores, collect_pickscores
 import torchvision
 
 # Will error if the minimal version of diffusers is not installed. Remove at your own risks.
@@ -723,8 +723,8 @@ def main(args):
     )
 
     if args.quality_threshold_for_div:
-        pass
-
+        logger.info(f'Calculating {args.quality_threshold_for_div} quality threshold for ')
+        q_value = collect_pickscores(train_dataset, model_pick, processor_pick, args.quality_threshold_for_div)
 
     def preprocess_train(examples):
         all_pixel_values = []
