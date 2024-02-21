@@ -598,7 +598,6 @@ def main(args):
 
     # PICKSCORE
     ######################
-    processor_pick = AutoProcessor.from_pretrained(args.clip_model_name_or_path)
     model_pick = AutoModel.from_pretrained(args.clip_model_name_or_path).eval().to(accelerator.device)
     ######################
 
@@ -723,9 +722,9 @@ def main(args):
     )
 
     if args.quality_threshold_for_div:
-        logger.info(f'Calculating {args.quality_threshold_for_div} quality threshold for ')
-        q_value = collect_pickscores(train_dataset, model_pick, processor_pick, args.quality_threshold_for_div)
+        q_value = args.quality_threshold_for_div
 
+    @torch.no_grad()
     def preprocess_train(examples):
         all_pixel_values = []
         all_pixel_values_ours = []
@@ -762,6 +761,31 @@ def main(args):
         examples["pixel_values_ours"] = combined_pixel_values_ours
 
         examples["input_ids"] = tokenize_captions(tokenizer, examples)
+
+        # Make mask
+        if args.quality_threshold_for_div:
+            pixel_values = examples["pixel_values_ours"].to(dtype=weight_dtype)
+            feed_pixel_values = torch.cat(pixel_values.chunk(2, dim=1))
+            img_1_batch, img_2_batch = feed_pixel_values.chunk(2, dim=0)
+            txt_1_batch, txt_2_batch = examples["input_ids"].chunk(2, dim=0)
+
+            image_1_embs = model_pick.get_image_features(img_1_batch.to(accelerator.device))
+            image_1_embs = image_1_embs / torch.norm(image_1_embs, dim=-1, keepdim=True)
+            text_1_embs = model_pick.get_text_features(txt_1_batch.to(accelerator.device))
+            text_1_embs = text_1_embs / torch.norm(text_1_embs, dim=-1, keepdim=True)
+            score_1 = (text_1_embs @ image_1_embs.T)[0]
+            mask_1 = (score_1 > q_value) * 1.0
+
+            image_2_embs = model_pick.get_image_features(img_2_batch.to(accelerator.device))
+            image_2_embs = image_2_embs / torch.norm(image_2_embs, dim=-1, keepdim=True)
+            text_2_embs = model_pick.get_text_features(txt_2_batch.to(accelerator.device))
+            text_2_embs = text_2_embs / torch.norm(text_2_embs, dim=-1, keepdim=True)
+            score_2 = (text_2_embs @ image_2_embs.T)[0]
+            mask_2 = (score_2 > q_value) * 1.0
+
+            mask = mask_1 * mask_2
+            examples['mask'] = mask
+
         return examples
     
     # Scheduler and math around the number of training steps.
@@ -954,13 +978,17 @@ def main(args):
                 total_log = positive_log + negative_log
 
                 loss_div = -1 * (total_log.mean())
+
+                if args.quality_threshold_for_div:
+                    mask = batch["mask"].cuda()
+                    loss_div = loss_div * mask
                 ############################
 
                 # Final loss.
                 logits = ref_diff - model_diff
                 if args.loss_type == "sigmoid":
                     loss_old = -1 * F.logsigmoid(args.beta_dpo * logits).mean()
-                    loss = loss_old + 0.2 * loss_div
+                    loss = loss_old + loss_div
                 elif args.loss_type == "hinge":
                     loss = torch.relu(1 - args.beta_dpo * logits).mean()
                 elif args.loss_type == "ipo":
