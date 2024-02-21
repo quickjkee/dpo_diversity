@@ -933,7 +933,7 @@ def main(args):
                     labels = model_ours.classify(img_1_batch, img_2_batch)
                     print(labels.sum() / len(labels))
 
-                scores = model_losses_w + model_losses_l - ref_losses_w - ref_losses_l
+                scores = -1 * (model_losses_w + model_losses_l - ref_losses_w - ref_losses_l)
                 positive_log = F.logsigmoid(args.beta_dpo * scores) * labels
                 negative_log = F.logsigmoid(-1 * args.beta_dpo * scores) * (1 - labels)
                 total_log = positive_log + negative_log
