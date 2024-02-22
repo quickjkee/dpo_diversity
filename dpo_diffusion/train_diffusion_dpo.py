@@ -980,7 +980,7 @@ def main(args):
 
                 if args.quality_threshold_for_div:
                     mask = batch["mask"].cuda()
-                    loss_div = -1 * (total_log * mask).sum() / mask.sum()
+                    loss_div = -1 * (total_log * mask).sum() / (mask.sum() + 0.00001)  # to avoid zero derivation
                 else:
                     loss_div = -1 * total_log.mean()
                 ############################
