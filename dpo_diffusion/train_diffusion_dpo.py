@@ -522,7 +522,9 @@ def collate_fn(examples):
     final_dict["pixel_values_ours"] = pixel_values_ours
 
     final_dict["input_ids"] = examples["input_ids"]
-    final_dict["mask"] = examples["mask"]
+
+    if args.quality_threshold_for_div:
+        final_dict["mask"] = examples["mask"]
 
     return final_dict
 
