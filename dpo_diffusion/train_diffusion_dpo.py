@@ -106,8 +106,8 @@ def log_validation(args, unet, accelerator, weight_dtype, epoch, is_final_valida
 
     # PICKSCORE
     ############
-    processor_pick = AutoProcessor.from_pretrained(args.clip_model_name_or_path)
-    model_pick = AutoModel.from_pretrained(args.clip_model_name_or_path).eval().to(accelerator.device)
+    processor_pick = AutoProcessor.from_pretrained(args.pickscore_model_name_or_path)
+    model_pick = AutoModel.from_pretrained(args.pickscore_model_name_or_path).eval().to(accelerator.device)
     ##########
 
     # OURS
