@@ -6,7 +6,7 @@ train_dataloader:
       dataset:
         target: yt_tools.yt_iterable_dataset.IterableYTDataset
         params:
-          table: //home/yr/dbaranchuk/datasets/pickapic_v2_train
+          table: //home/yr/dbaranchuk/datasets/pickapic_v2_eq_models
           yt_proxy: hahn
       non_stackable:
         - jpg_0
