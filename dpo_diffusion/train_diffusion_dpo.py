@@ -524,7 +524,7 @@ def collate_fn(examples):
     final_dict["input_ids"] = examples["input_ids"]
 
     if args.quality_threshold_for_div:
-        final_dict["mask"] = torch.stack(examples["mask"])
+        final_dict["mask"] = examples["mask"]
 
     return final_dict
 
