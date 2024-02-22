@@ -978,11 +978,12 @@ def main(args):
                 negative_log = F.logsigmoid(-1 * args.beta_dpo * scores) * (1 - labels)
                 total_log = positive_log + negative_log
 
-                loss_div = -1 * (total_log.mean())
-
                 if args.quality_threshold_for_div:
                     mask = batch["mask"].cuda()
-                    loss_div = loss_div * mask
+                    loss_div = -1 (total_log * mask).sum() / mask.sum()
+                else:
+                    loss_div = -1 * total_log.mean()
+
                 ############################
 
                 # Final loss.
