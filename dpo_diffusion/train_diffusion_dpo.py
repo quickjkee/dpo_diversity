@@ -56,7 +56,7 @@ import yaml
 import pickle
 from omegaconf import OmegaConf
 import torch.distributed as dist
-from src.nirvana_utils import copy_snapshot_to_out, copy_out_to_snapshot
+from src.nirvana_utils import copy_snapshot_to_out, copy_out_to_snapshot, copy_logs_to_logs_path
 from src import dnnlib
 import src
 from yt_tools.utils import instantiate_from_config
@@ -1041,6 +1041,7 @@ def main(args):
                         logger.info(f"Saved state to {save_path}")
                         # Nirvana utils
                         copy_out_to_snapshot(args.output_dir)
+                        copy_logs_to_logs_path(logging_dir)
 
                     if args.run_validation and global_step % args.validation_steps == 0:
                         log_validation(

@@ -20,6 +20,19 @@ def copy_snapshot_to_out(out):
         # os.system(f"tar -xf {out}/state -C {out}/")
         # ^-- This is not needed for the recent PythonDL blocks. 
         # The state should be already unpacked in snapshot_path
+def copy_logs_to_logs_path(out):
+    """ This function copies all files in the local "out" directory to "snapshot path".
+        dump: If True, put these files into tar-archive "state" and
+              send it to the Python DL output.
+    """
+    if nirvana_dl:
+        logs_path = nirvana_dl.logs_path()
+        print(f"Copy {out} to the snapshot path: {logs_path}")
+
+        # Delete previous state to avoid memory explosion
+        copy_tree(out, logs_path)
+    else:
+        print(f"Nirvana DL is not found. Logs are not transfered to the logs path.")
     
 
 def copy_out_to_snapshot(out, dump=True):
