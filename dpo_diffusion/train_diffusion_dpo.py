@@ -522,6 +522,8 @@ def collate_fn(examples):
     final_dict["pixel_values_ours"] = pixel_values_ours
 
     final_dict["input_ids"] = examples["input_ids"]
+    final_dict["mask"] = examples["mask"]
+
     return final_dict
 
 
@@ -767,20 +769,19 @@ def main(args):
             pixel_values = examples["pixel_values_ours"].to(dtype=weight_dtype)
             feed_pixel_values = torch.cat(pixel_values.chunk(2, dim=1))
             img_1_batch, img_2_batch = feed_pixel_values.chunk(2, dim=0)
-            txt_1_batch, txt_2_batch = examples["input_ids"].chunk(2, dim=0)
+            txt_batch = examples["input_ids"]
+
+            text_embs = model_pick.get_text_features(txt_batch.to(accelerator.device))
+            text_embs = text_embs / torch.norm(text_embs, dim=-1, keepdim=True)
 
             image_1_embs = model_pick.get_image_features(img_1_batch.to(accelerator.device))
             image_1_embs = image_1_embs / torch.norm(image_1_embs, dim=-1, keepdim=True)
-            text_1_embs = model_pick.get_text_features(txt_1_batch.to(accelerator.device))
-            text_1_embs = text_1_embs / torch.norm(text_1_embs, dim=-1, keepdim=True)
-            score_1 = (text_1_embs @ image_1_embs.T)[0]
+            score_1 = (text_embs * image_1_embs.T).sum(-1)
             mask_1 = (score_1 > q_value) * 1.0
 
             image_2_embs = model_pick.get_image_features(img_2_batch.to(accelerator.device))
             image_2_embs = image_2_embs / torch.norm(image_2_embs, dim=-1, keepdim=True)
-            text_2_embs = model_pick.get_text_features(txt_2_batch.to(accelerator.device))
-            text_2_embs = text_2_embs / torch.norm(text_2_embs, dim=-1, keepdim=True)
-            score_2 = (text_2_embs @ image_2_embs.T)[0]
+            score_2 = (text_embs * image_2_embs.T).sum(-1)
             mask_2 = (score_2 > q_value) * 1.0
 
             mask = mask_1 * mask_2
@@ -977,11 +978,11 @@ def main(args):
                 negative_log = F.logsigmoid(-1 * args.beta_dpo * scores) * (1 - labels)
                 total_log = positive_log + negative_log
 
-                loss_div = -1 * (total_log.mean())
-
                 if args.quality_threshold_for_div:
                     mask = batch["mask"].cuda()
-                    loss_div = loss_div * mask
+                    loss_div = -1 * (total_log * mask).sum() / mask.sum()
+                else:
+                    loss_div = -1 * total_log.mean()
                 ############################
 
                 # Final loss.
