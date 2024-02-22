@@ -766,7 +766,7 @@ def main(args):
 
         # Make mask
         if args.quality_threshold_for_div:
-            pixel_values = examples["pixel_values_ours"]
+            pixel_values = torch.stack(examples["pixel_values_ours"])
             feed_pixel_values = torch.cat(pixel_values.chunk(2, dim=1)).to(dtype=weight_dtype)
             img_1_batch, img_2_batch = feed_pixel_values.chunk(2, dim=0)
             txt_batch = examples["input_ids"]
