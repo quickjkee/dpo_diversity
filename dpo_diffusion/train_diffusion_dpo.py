@@ -781,7 +781,7 @@ def main(args):
             image_2_embs = model_pick.get_image_features(img_2_batch.to(accelerator.device))
             image_2_embs = image_2_embs / torch.norm(image_2_embs, dim=-1, keepdim=True)
             
-            score_2 = (text_embs @ image_2_embs).sum(-1)
+            score_2 = (text_embs * image_2_embs).sum(-1)
             mask_2 = (score_2 > q_value) * 1.0
 
             mask = mask_1 * mask_2
