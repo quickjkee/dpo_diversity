@@ -981,24 +981,24 @@ def main(args):
                     labels = model_ours.classify(img_1_batch, img_2_batch)
                     print(labels.sum() / len(labels))
 
-                    scores = -1 * (model_losses_w + model_losses_l - ref_losses_w - ref_losses_l)
-                    positive_log = F.logsigmoid(args.beta_dpo * scores) * labels
-                    negative_log = F.logsigmoid(-1 * args.beta_dpo * scores) * (1 - labels)
-                    total_log = positive_log + negative_log
+                scores = -1 * (model_losses_w + model_losses_l - ref_losses_w - ref_losses_l)
+                positive_log = F.logsigmoid(args.beta_dpo * scores) * labels
+                negative_log = F.logsigmoid(-1 * args.beta_dpo * scores) * (1 - labels)
+                total_log = positive_log + negative_log
 
-                    if args.quality_threshold_for_div:
-                        mask = batch["mask"].cuda()
-                        print(mask)
-                        loss_div = -1 * (total_log * mask).mean()   #/ (mask.sum() + 0.00001)  # to avoid zero derivation
-                    else:
-                        loss_div = -1 * total_log.mean()
+                if args.quality_threshold_for_div:
+                    mask = batch["mask"].cuda()
+                    print(mask)
+                    loss_div = -1 * (total_log * mask).mean()   #/ (mask.sum() + 0.00001)  # to avoid zero derivation
+                else:
+                    loss_div = -1 * total_log.mean()
                 ############################
 
                 # Final loss.
                 logits = ref_diff - model_diff
                 if args.loss_type == "sigmoid":
                     loss_old = -1 * F.logsigmoid(args.beta_dpo * logits).mean()
-                    loss = loss_old #+ loss_div
+                    loss = loss_old + 0.5 * loss_div
                 elif args.loss_type == "hinge":
                     loss = torch.relu(1 - args.beta_dpo * logits).mean()
                 elif args.loss_type == "ipo":
