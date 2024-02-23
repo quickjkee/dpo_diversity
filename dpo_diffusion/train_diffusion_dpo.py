@@ -72,11 +72,11 @@ check_min_version("0.25.0.dev0")
 logger = get_logger(__name__)
 
 VALIDATION_PROMPTS = [
-    "portrait photo of a girl, photograph, highly detailed face, depth of field, moody light, golden hour, style by Dan Winters, Russell James, Steve McCurry, centered, extremely detailed, Nikon D850, award winning photography",
+    "A picture of a cute girl at a meadow, smiling, at night, in anime style",
     "Self-portrait oil painting, a beautiful cyborg with golden hair, 8k",
     "Astronaut in a jungle, cold color palette, muted colors, detailed, 8k",
     'a hedgehog gummy',
-    'mature woman drawn anime style',
+    'a car that is made out of wood',
     'A girl with pale blue hair and a cami tank top',
     'A bird with 8 spider legs',
     'An underwater city with fish swimming around',
@@ -87,7 +87,8 @@ VALIDATION_PROMPTS = [
     'zombie in school at night with a flamethrower',
     'A human hand with five fingers',
     'Watercolor painting of european modern city, medieval, nightfall moonlight, by greg rutkowski, by anders zorn',
-    'A cat dressed as a ninja'
+    'A cat dressed as a ninja',
+    'A photo of a viking man holding a broadsword, snowy forest'
 ]
 
 def import_model_class_from_model_name_or_path(pretrained_model_name_or_path: str, revision: str):
