@@ -71,19 +71,24 @@ check_min_version("0.25.0.dev0")
 
 logger = get_logger(__name__)
 
-
 VALIDATION_PROMPTS = [
     "portrait photo of a girl, photograph, highly detailed face, depth of field, moody light, golden hour, style by Dan Winters, Russell James, Steve McCurry, centered, extremely detailed, Nikon D850, award winning photography",
     "Self-portrait oil painting, a beautiful cyborg with golden hair, 8k",
     "Astronaut in a jungle, cold color palette, muted colors, detailed, 8k",
-    "A photo of beautiful mountain with realistic sunset and blue lake, highly detailed, masterpiece",
-    'A sad puppy with large eyes',
+    'a hedgehog gummy',
     'mature woman drawn anime style',
     'A girl with pale blue hair and a cami tank top',
-    'A beautiful natural woman',
-    'cute girl, Kyoto animation, 4k, high resolution',
+    'A bird with 8 spider legs',
+    'An underwater city with fish swimming around',
+    'A futuristic motorcycle prototype, design inspired by F-117 Nighthawk,',
+    'Ronald Reagan as a LEGO minifigure',
+    'a man with a dog watching a beautiful sunset, lush green landscape',
+    'cat as a mafia boss',
+    'zombie in school at night with a flamethrower',
+    'A human hand with five fingers',
+    'Watercolor painting of european modern city, medieval, nightfall moonlight, by greg rutkowski, by anders zorn',
+    'A cat dressed as a ninja'
 ]
-
 
 def import_model_class_from_model_name_or_path(pretrained_model_name_or_path: str, revision: str):
     text_encoder_config = PretrainedConfig.from_pretrained(
@@ -983,7 +988,7 @@ def main(args):
                     if args.quality_threshold_for_div:
                         mask = batch["mask"].cuda()
                         print(mask)
-                        loss_div = -1 * (total_log * mask).sum() / (mask.sum() + 0.00001)  # to avoid zero derivation
+                        loss_div = -1 * (total_log * mask).mean()   #/ (mask.sum() + 0.00001)  # to avoid zero derivation
                     else:
                         loss_div = -1 * total_log.mean()
                 ############################
