@@ -949,7 +949,6 @@ def main(args):
                 raw_model_loss = 0.5 * (model_losses_w.mean() + model_losses_l.mean())
                 model_diff = model_losses_w - model_losses_l  # These are both LBS (as is t)
 
-
                 # Reference model predictions.
                 accelerator.unwrap_model(unet).disable_adapters()
                 with torch.no_grad():
