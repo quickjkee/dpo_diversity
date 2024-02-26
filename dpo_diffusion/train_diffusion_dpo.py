@@ -1016,6 +1016,7 @@ def main(args):
                         loss_div = -1 * (total_log * mask)   #/ (mask.sum() + 0.00001)  # to avoid zero derivation
                     else:
                         loss_div = -1 * total_log
+                    loss_div = loss_div.mean()
                 ############################
 
                 # Final loss and filtering if needed
@@ -1027,7 +1028,8 @@ def main(args):
                     print(mask)
                     loss_logits = loss_logits * mask # / (mask.sum() + 0.00001)  # to avoid zero derivation
 
-                loss = loss_logits.mean() #+ loss_div).mean()
+                loss_reward = loss_logits.mean()
+                loss = loss_reward #+ loss_div
 
                 """
                 if args.loss_type == "sigmoid":
@@ -1117,7 +1119,7 @@ def main(args):
                     
             logs = {
                 "loss": loss.detach().item(),
-                "loss_pick": loss.detach().item(),
+                "loss_pick": loss_reward.detach().item(),
                 "loss_div": loss_div.detach().item(),
                 "raw_model_loss": raw_model_loss.detach().item(),
                 "ref_loss": raw_ref_loss.detach().item(),
