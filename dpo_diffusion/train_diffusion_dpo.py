@@ -1117,7 +1117,7 @@ def main(args):
                     
             logs = {
                 "loss": loss.detach().item(),
-                "loss_pick": loss_old.detach().item(),
+                "loss_pick": loss.detach().item(),
                 "loss_div": loss_div.detach().item(),
                 "raw_model_loss": raw_model_loss.detach().item(),
                 "ref_loss": raw_ref_loss.detach().item(),
