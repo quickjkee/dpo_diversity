@@ -530,7 +530,10 @@ def collate_fn(examples):
     final_dict["input_ids"] = examples["input_ids"]
 
     if args.quality_threshold_for_div:
-        final_dict["mask"] = examples["mask"]
+        final_dict["mask_quality"] = examples["mask_quality"]
+
+    if args.div_threshold_for_quality:
+        final_dict["mask_div"] = examples["mask_div"]
 
     return final_dict
 
@@ -731,9 +734,6 @@ def main(args):
         ]
     )
 
-    if args.quality_threshold_for_div:
-        q_value = args.quality_threshold_for_div
-
     @torch.no_grad()
     def preprocess_train(examples):
         all_pixel_values = []
@@ -772,8 +772,10 @@ def main(args):
 
         examples["input_ids"] = tokenize_captions(tokenizer, examples)
 
-        # Make mask
+        # Make mask for quality
         if args.quality_threshold_for_div:
+            q_value = args.quality_threshold_for_div
+
             pixel_values = torch.stack(examples["pixel_values_ours"])
             feed_pixel_values = torch.cat(pixel_values.chunk(2, dim=1)).to(dtype=weight_dtype)
             img_1_batch, img_2_batch = feed_pixel_values.chunk(2, dim=0)
@@ -793,7 +795,26 @@ def main(args):
             mask_2 = (score_2 > q_value) * 1.0
 
             mask = mask_1 * mask_2
-            examples['mask'] = mask
+            examples['mask_quality'] = mask
+
+        # Make mask for diversity
+        if args.div_threshold_for_quality:
+            q_value = args.div_threshold_for_quality
+
+            pixel_values = torch.stack(examples["pixel_values_ours"])
+            feed_pixel_values = torch.cat(pixel_values.chunk(2, dim=1)).to(dtype=weight_dtype)
+            img_1_batch, img_2_batch = feed_pixel_values.chunk(2, dim=0)
+
+            image_1_embs = model_ours.get_image_features(img_1_batch.to(accelerator.device))
+            image_1_embs = image_1_embs / torch.norm(image_1_embs, dim=-1, keepdim=True)
+            image_2_embs = model_ours.get_image_features(img_2_batch.to(accelerator.device))
+            image_2_embs = image_2_embs / torch.norm(image_2_embs, dim=-1, keepdim=True)
+
+            score = (F.cosine_similarity(image_1_embs, image_2_embs, dim=1) + 1) / 2
+            print(score)
+            mask = (score < q_value) * 1.0
+
+            examples['mask_div'] = mask
 
         return examples
     
@@ -986,15 +1007,24 @@ def main(args):
                     total_log = positive_log + negative_log
 
                     if args.quality_threshold_for_div:
-                        mask = batch["mask"].cuda()
-                        print(mask)
-                        loss_div = -1 * (total_log * mask).mean()   #/ (mask.sum() + 0.00001)  # to avoid zero derivation
+                        mask = batch["mask_quality"].cuda()
+                        loss_div = -1 * (total_log * mask)   #/ (mask.sum() + 0.00001)  # to avoid zero derivation
                     else:
-                        loss_div = -1 * total_log.mean()
+                        loss_div = -1 * total_log
                 ############################
 
-                # Final loss.
+                # Final loss and filtering if needed
                 logits = ref_diff - model_diff
+                loss_logits = -1 * F.logsigmoid(args.beta_dpo * logits)
+
+                if args.div_threshold_for_quality:
+                    mask = batch["mask_div"].cuda()
+                    print(mask)
+                    loss_logits = -1 * (total_log * mask) # / (mask.sum() + 0.00001)  # to avoid zero derivation
+
+                loss = (loss_logits).mean() #+ loss_div).mean()
+
+                """
                 if args.loss_type == "sigmoid":
                     loss_old = -1 * F.logsigmoid(args.beta_dpo * logits).mean()
                     loss = loss_old #+ 0.05 * loss_div
@@ -1005,6 +1035,7 @@ def main(args):
                     loss = losses.mean()
                 else:
                     raise ValueError(f"Unknown loss type {args.loss_type}")
+                """
 
                 implicit_acc = (logits > 0).sum().float() / logits.size(0)
                 implicit_acc += 0.5 * (logits == 0).sum().float() / logits.size(0)
