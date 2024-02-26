@@ -478,6 +478,11 @@ def parse_args(input_args=None):
         type=float,
         default=0.0
     )
+    parser.add_argument(
+        "--div_threshold_for_quality",
+        type=float,
+        default=0.0
+    )
 
     if input_args is not None:
         args = parser.parse_args(input_args)
