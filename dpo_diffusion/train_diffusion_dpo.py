@@ -1025,9 +1025,9 @@ def main(args):
                 if args.div_threshold_for_quality:
                     mask = batch["mask_div"].cuda()
                     print(mask)
-                    loss_logits = -1 * (total_log * mask) # / (mask.sum() + 0.00001)  # to avoid zero derivation
+                    loss_logits = loss_logits * mask # / (mask.sum() + 0.00001)  # to avoid zero derivation
 
-                loss = (loss_logits).mean() #+ loss_div).mean()
+                loss = loss_logits.mean() #+ loss_div).mean()
 
                 """
                 if args.loss_type == "sigmoid":
